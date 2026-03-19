@@ -73,7 +73,7 @@ async def send_lunch_reminder():
 # ══════════════════════════════════════════════════════
 # 2. 슬랙 이벤트: 파일 업로드 처리
 # ══════════════════════════════════════════════════════
-@app.event("message")
+@app.event("message.im")
 async def handle_message(event, say, client):
     # 봇 메시지 무시
     if event.get("bot_id") or event.get("subtype"):
