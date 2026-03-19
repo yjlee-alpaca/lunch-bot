@@ -84,9 +84,8 @@ async def handle_message(event, say, client):
     files   = event.get("files", [])
     text    = event.get("text", "").strip()
 
-    # DM만 처리
-    channel_info = await client.conversations_info(channel=channel)
-    if not channel_info["channel"].get("is_im"):
+    # DM만 처리 (슬랙 DM 채널 ID는 D로 시작)
+    if not channel.startswith("D"):
         return
 
     # ── 파일 첨부 ──
