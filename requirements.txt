@@ -3,3 +3,4 @@ slack-sdk>=3.27
 playwright>=1.44
 apscheduler>=3.10
 httpx>=0.27
+aiohttp>=3.9
