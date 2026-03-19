@@ -73,19 +73,20 @@ async def send_lunch_reminder():
 # ══════════════════════════════════════════════════════
 # 2. 슬랙 이벤트: 파일 업로드 처리
 # ══════════════════════════════════════════════════════
-@app.event("message.im")
+@app.event("message")
 async def handle_message(event, say, client):
     # 봇 메시지 무시
     if event.get("bot_id") or event.get("subtype"):
         return
 
-    channel = event["channel"]
-    user    = event.get("user", "")
-    files   = event.get("files", [])
-    text    = event.get("text", "").strip()
+    channel      = event["channel"]
+    channel_type = event.get("channel_type", "")
+    user         = event.get("user", "")
+    files        = event.get("files", [])
+    text         = event.get("text", "").strip()
 
-    # DM만 처리 (슬랙 DM 채널 ID는 D로 시작)
-    if not channel.startswith("D"):
+    # DM만 처리
+    if channel_type != "im":
         return
 
     # ── 파일 첨부 ──
