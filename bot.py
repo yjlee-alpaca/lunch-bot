@@ -47,11 +47,40 @@ async def download_slack_file(file):
     log.info(f"파일 다운로드 완료: {len(resp.content)} bytes, mime: {file.get('mimetype')}")
     return Path(tmp.name)
 
+async def resize_image_if_needed(file_path, mime):
+    """이미지가 2MB 이상이면 리사이즈"""
+    if mime == "application/pdf":
+        return file_path
+    try:
+        from PIL import Image
+        import io
+        size = os.path.getsize(file_path)
+        if size <= 2 * 1024 * 1024:
+            return file_path
+        log.info(f"이미지 리사이즈 필요: {size} bytes")
+        img = Image.open(file_path)
+        # 최대 1600px로 줄이기
+        img.thumbnail((1600, 1600), Image.LANCZOS)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        img.convert("RGB").save(tmp.name, "JPEG", quality=85)
+        tmp.close()
+        new_size = os.path.getsize(tmp.name)
+        log.info(f"리사이즈 완료: {new_size} bytes")
+        return Path(tmp.name)
+    except Exception as e:
+        log.warning(f"리사이즈 실패, 원본 사용: {e}")
+        return file_path
+
 async def analyze_receipt(file_path, mime, fallback_date):
     mime_map = {"image/jpg": "image/jpeg", "image/jpeg": "image/jpeg",
                 "image/png": "image/png", "image/gif": "image/gif",
                 "image/webp": "image/webp", "application/pdf": "application/pdf"}
     api_mime = mime_map.get(mime, "image/jpeg")
+
+    # 이미지 리사이즈
+    file_path = await resize_image_if_needed(file_path, mime)
+    if mime != "application/pdf":
+        api_mime = "image/jpeg"  # 리사이즈 후 항상 JPEG
 
     with open(file_path, "rb") as f:
         data = base64.standard_b64encode(f.read()).decode()
