@@ -75,19 +75,24 @@ async def send_lunch_reminder():
 # ══════════════════════════════════════════════════════
 @app.event("message")
 async def handle_message(event, say, client):
-    log.info(f"메시지 이벤트 수신: channel_type={event.get('channel_type')}, user={event.get('user')}, bot_id={event.get('bot_id')}")
+    log.info(f"메시지 이벤트 수신: channel_type={event.get('channel_type')}, user={event.get('user')}, bot_id={event.get('bot_id')}, files={bool(event.get('files'))}, subtype={event.get('subtype')}")
     # 봇 메시지 무시
-    if event.get("bot_id") or event.get("subtype"):
+    if event.get("bot_id"):
         return
 
     channel      = event["channel"]
     channel_type = event.get("channel_type", "")
     user         = event.get("user", "")
+    subtype      = event.get("subtype", "")
     files        = event.get("files", [])
     text         = event.get("text", "").strip()
 
     # DM만 처리
     if channel_type != "im":
+        return
+    
+    # file_share subtype도 처리
+    if subtype and subtype != "file_share":
         return
 
     # ── 파일 첨부 ──
