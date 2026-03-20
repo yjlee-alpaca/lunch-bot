@@ -163,6 +163,77 @@ async def handle_message(event, say, client):
 
 
 # ══════════════════════════════════════════════════════
+# 2-1. file_shared 이벤트 핸들러 (파일 업로드 시 별도 이벤트)
+@app.event("file_shared")
+async def handle_file_shared(event, client, say):
+    """file_shared 이벤트 - 파일 정보 가져와서 처리"""
+    file_id  = event.get("file_id") or event.get("file", {}).get("id")
+    channel  = event.get("channel_id")
+    
+    if not file_id or not channel:
+        return
+    
+    log.info(f"file_shared 이벤트: file_id={file_id}, channel={channel}")
+    
+    try:
+        # 파일 정보 조회
+        file_info = await client.files_info(file=file_id)
+        file      = file_info["file"]
+        mime      = file.get("mimetype", "")
+        
+        if not (mime.startswith("image/") or mime == "application/pdf"):
+            await client.chat_postMessage(channel=channel, text="❌ PNG, JPG, PDF 파일만 지원해요. 다시 올려주세요!")
+            return
+        
+        await client.chat_postMessage(channel=channel, text="📎 영수증 분석 중... 잠깐만요! 🔍")
+        
+        today = datetime.now(KST).strftime("%Y-%m-%d")
+        tmp_path = await download_slack_file(client, file)
+        result   = await analyze_receipt(tmp_path, mime, today)
+        
+        amount     = result["amount"]
+        store_name = result.get("store_name", "")
+        date       = result.get("date", today)
+        
+        log.info(f"영수증 분석 완료: {store_name} {amount}원 {date}")
+        
+        if amount >= 20000:
+            pending[channel] = {
+                "amount": amount,
+                "store_name": store_name,
+                "date": date,
+                "file_path": str(tmp_path),
+                "mime": mime,
+            }
+            await client.chat_postMessage(
+                channel=channel,
+                text=(
+                    f"💰 *{amount:,}원* 이네요! 여러 명이 드셨나요?
+
+"
+                    "함께 드신 분 이름을 입력해주세요 _(예: 김철수, 이영희)_
+"
+                    "혼자 드셨으면 `혼자` 라고 입력해주세요."
+                )
+            )
+        else:
+            await process_expense(
+                say=lambda text, **kw: client.chat_postMessage(channel=channel, text=text),
+                channel=channel,
+                amount=amount,
+                store_name=store_name,
+                date=date,
+                file_path=str(tmp_path),
+                mime=mime,
+                companions=[],
+            )
+    except Exception as e:
+        log.error(f"file_shared 처리 실패: {e}")
+        await client.chat_postMessage(channel=channel, text=f"❌ 영수증 읽기 실패: {e}
+금액을 직접 입력해주세요 (예: `15000`)")
+
+
+# ══════════════════════════════════════════════════════
 # 3. 하이웍스 자동 제출
 # ══════════════════════════════════════════════════════
 MEAL_ALLOWANCE = 11_000  # 1인당 식대 한도
