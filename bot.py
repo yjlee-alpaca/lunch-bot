@@ -106,7 +106,7 @@ async def analyze_receipt(file_path, mime, fallback_date):
                 "content-type": "application/json"
             },
             json={
-                "model": "claude-opus-4-5",
+                "model": "claude-sonnet-4-20250514",
                 "max_tokens": 256,
                 "messages": [{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}]
             }
