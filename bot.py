@@ -75,6 +75,7 @@ async def send_lunch_reminder():
 # ══════════════════════════════════════════════════════
 @app.event("message")
 async def handle_message(event, say, client):
+    log.info(f"메시지 이벤트 수신: channel_type={event.get('channel_type')}, user={event.get('user')}, bot_id={event.get('bot_id')}")
     # 봇 메시지 무시
     if event.get("bot_id") or event.get("subtype"):
         return
