@@ -439,7 +439,7 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
     scheduler.add_job(
         send_lunch_reminder,
-        CronTrigger(hour=12, minute=30, day_of_week="mon-fri"),
+        CronTrigger(hour=12, minute=30, day_of_week="mon-fri", timezone="Asia/Seoul"),
     )
     scheduler.start()
     log.info("스케줄러 시작 (매일 월~금 12:30 KST)")
