@@ -366,7 +366,21 @@ async def analyze_receipt(file_path: Path, mime: str, fallback_date: str) -> dic
     with open(file_path, "rb") as f:
         data = base64.standard_b64encode(f.read()).decode()
 
-    if mime == "application/pdf":
+    # 지원 mime 타입 정규화
+    if mime in ("image/jpg", "image/jpeg"):
+        api_mime = "image/jpeg"
+    elif mime == "image/png":
+        api_mime = "image/png"
+    elif mime == "image/gif":
+        api_mime = "image/gif"
+    elif mime == "image/webp":
+        api_mime = "image/webp"
+    elif mime == "application/pdf":
+        api_mime = "application/pdf"
+    else:
+        api_mime = "image/jpeg"  # 기본값
+
+    if api_mime == "application/pdf":
         content_block = {
             "type": "document",
             "source": {"type": "base64", "media_type": "application/pdf", "data": data},
@@ -374,7 +388,7 @@ async def analyze_receipt(file_path: Path, mime: str, fallback_date: str) -> dic
     else:
         content_block = {
             "type": "image",
-            "source": {"type": "base64", "media_type": mime, "data": data},
+            "source": {"type": "base64", "media_type": api_mime, "data": data},
         }
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -424,16 +438,18 @@ async def download_slack_file(client, file: dict) -> Path:
     url = file.get("url_private_download") or file.get("url_private")
     ext = Path(file.get("name", "receipt.png")).suffix or ".png"
 
-    async with httpx.AsyncClient(timeout=30) as http:
+    async with httpx.AsyncClient(timeout=60) as http:
         resp = await http.get(
             url,
             headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+            follow_redirects=True,
         )
         resp.raise_for_status()
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
     tmp.write(resp.content)
     tmp.close()
+    log.info(f"파일 다운로드 완료: {tmp.name}, 크기: {len(resp.content)} bytes, mime: {ext}")
     return Path(tmp.name)
 
 
