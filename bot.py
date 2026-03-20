@@ -97,6 +97,15 @@ async def analyze_receipt(file_path, mime, fallback_date):
 
     prompt = '이 영수증에서 정보를 추출해주세요. JSON만 응답하세요: {"amount": 숫자, "store_name": "가게명", "date": "YYYY-MM-DD"} 날짜 없으면 ' + fallback_date
 
+    log.info(f"API 키 앞 10자: {ANTHROPIC_API_KEY[:10]}...")
+    
+    request_body = {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 256,
+        "messages": [{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}]
+    }
+    log.info(f"요청 모델: {request_body['model']}, 이미지 타입: {content_block.get('type')}, base64 길이: {len(data)}")
+
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             "https://api.anthropic.com/v1/messages",
@@ -105,14 +114,16 @@ async def analyze_receipt(file_path, mime, fallback_date):
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json"
             },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 256,
-                "messages": [{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}]
-            }
+            json=request_body
         )
     log.info(f"Claude API 응답: {resp.status_code}")
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        error_body = resp.text
+        log.error(f"=== Claude API 에러 ===")
+        log.error(f"상태코드: {resp.status_code}")
+        log.error(f"응답 본문: {error_body}")
+        log.error(f"=======================")
+        raise ValueError(f"Claude API {resp.status_code}: {error_body[:200]}")
     text = resp.json()["content"][0]["text"]
     log.info(f"Claude 응답 내용: {text}")
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -220,17 +231,8 @@ async def handle_message(event, client):
 
 @app.event("file_shared")
 async def handle_file_shared(event, client):
-    log.info(f"file_shared 이벤트: {event}")
-    file_id = event.get("file_id") or event.get("file", {}).get("id")
-    channel = event.get("channel_id")
-    if not file_id or not channel:
-        return
-    try:
-        file_info = await client.files_info(file=file_id)
-        await process_file(file_info["file"], channel, client)
-    except Exception as e:
-        log.error(f"file_shared 처리 실패: {e}")
-        await client.chat_postMessage(channel=channel, text=f"파일 처리 실패: {e}")
+    log.info(f"file_shared 이벤트 무시 (message 이벤트에서 처리): {event.get('file_id')}")
+    return
 
 # ── 하이웍스 자동 제출 ────────────────────────────────
 async def submit_to_hiworks(date, amount, store_name, companions, file_path):
