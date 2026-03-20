@@ -4,3 +4,4 @@ playwright>=1.44
 apscheduler>=3.10
 httpx>=0.27
 Pillow>=10.0
+aiohttp>=3.9
