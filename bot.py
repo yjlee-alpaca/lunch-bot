@@ -72,35 +72,49 @@ async def resize_image_if_needed(file_path, mime):
         return file_path
 
 async def analyze_receipt(file_path, mime, fallback_date):
-    mime_map = {"image/jpg": "image/jpeg", "image/jpeg": "image/jpeg",
-                "image/png": "image/png", "image/gif": "image/gif",
-                "image/webp": "image/webp", "application/pdf": "application/pdf"}
-    api_mime = mime_map.get(mime, "image/jpeg")
+    # 항상 JPEG로 변환해서 API에 전송
+    try:
+        from PIL import Image as PILImage
+        img = PILImage.open(file_path)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+        img.convert("RGB").save(tmp.name, "JPEG", quality=85)
+        tmp.close()
+        final_path = Path(tmp.name)
+        api_mime = "image/jpeg"
+        log.info(f"JPEG 변환 완료: {os.path.getsize(final_path)} bytes")
+    except Exception as e:
+        log.warning(f"JPEG 변환 실패: {e}, 원본 사용")
+        final_path = file_path
+        api_mime = "image/jpeg" if not mime == "application/pdf" else "application/pdf"
 
-    # 이미지 리사이즈
-    file_path = await resize_image_if_needed(file_path, mime)
-    if mime != "application/pdf":
-        api_mime = "image/jpeg"  # 리사이즈 후 항상 JPEG
-
-    with open(file_path, "rb") as f:
+    with open(final_path, "rb") as f:
         data = base64.standard_b64encode(f.read()).decode()
 
     if api_mime == "application/pdf":
         content_block = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": data}}
     else:
-        content_block = {"type": "image", "source": {"type": "base64", "media_type": api_mime, "data": data}}
+        content_block = {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    prompt = '이 영수증에서 정보를 추출해주세요. JSON만 응답하세요: {"amount": 숫자, "store_name": "가게명", "date": "YYYY-MM-DD"} 날짜 없으면 ' + fallback_date
+
+    async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-            json={"model": "claude-opus-4-5", "max_tokens": 256, "messages": [{"role": "user", "content": [
-                content_block,
-                {"type": "text", "text": f'영수증에서 JSON만 응답: {{"amount": 숫자, "store_name": "가게명", "date": "YYYY-MM-DD"}} 날짜 없으면 {fallback_date}'}
-            ]}]}
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-opus-4-5",
+                "max_tokens": 256,
+                "messages": [{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}]
+            }
         )
+    log.info(f"Claude API 응답: {resp.status_code}")
     resp.raise_for_status()
     text = resp.json()["content"][0]["text"]
+    log.info(f"Claude 응답 내용: {text}")
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError("영수증 정보를 읽지 못했어요")
