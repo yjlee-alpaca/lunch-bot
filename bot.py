@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 
 SLACK_BOT_TOKEN   = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN   = os.environ["SLACK_APP_TOKEN"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY    = os.environ["GEMINI_API_KEY"]
 HIWORKS_EMAIL     = os.environ["HIWORKS_EMAIL"]
 HIWORKS_PASSWORD  = os.environ["HIWORKS_PASSWORD"]
 MY_SLACK_USER_ID  = os.environ["MY_SLACK_USER_ID"]
@@ -85,47 +85,37 @@ async def analyze_receipt(file_path, mime, fallback_date):
     except Exception as e:
         log.warning(f"JPEG 변환 실패: {e}, 원본 사용")
         final_path = file_path
-        api_mime = "image/jpeg" if not mime == "application/pdf" else "application/pdf"
+        api_mime = "image/jpeg" if mime != "application/pdf" else "application/pdf"
 
     with open(final_path, "rb") as f:
         data = base64.standard_b64encode(f.read()).decode()
 
-    if api_mime == "application/pdf":
-        content_block = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": data}}
-    else:
-        content_block = {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
-
     prompt = '이 영수증에서 정보를 추출해주세요. JSON만 응답하세요: {"amount": 숫자, "store_name": "가게명", "date": "YYYY-MM-DD"} 날짜 없으면 ' + fallback_date
 
-    log.info(f"API 키 앞 10자: {ANTHROPIC_API_KEY[:10]}...")
-    
     request_body = {
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 256,
-        "messages": [{"role": "user", "content": [content_block, {"type": "text", "text": prompt}]}]
+        "contents": [{
+            "parts": [
+                {"inline_data": {"mime_type": api_mime, "data": data}},
+                {"text": prompt}
+            ]
+        }]
     }
-    log.info(f"요청 모델: {request_body['model']}, 이미지 타입: {content_block.get('type')}, base64 길이: {len(data)}")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    log.info(f"Gemini API 호출 중... 이미지 타입: {api_mime}, base64 길이: {len(data)}")
 
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json=request_body
-        )
-    log.info(f"Claude API 응답: {resp.status_code}")
+        resp = await client.post(url, json=request_body, headers={"content-type": "application/json"})
+
+    log.info(f"Gemini API 응답: {resp.status_code}")
     if resp.status_code != 200:
         error_body = resp.text
-        log.error(f"=== Claude API 에러 ===")
-        log.error(f"상태코드: {resp.status_code}")
-        log.error(f"응답 본문: {error_body}")
-        log.error(f"=======================")
-        raise ValueError(f"Claude API {resp.status_code}: {error_body[:200]}")
-    text = resp.json()["content"][0]["text"]
-    log.info(f"Claude 응답 내용: {text}")
+        log.error(f"Gemini API 에러: {error_body}")
+        raise ValueError(f"Gemini API {resp.status_code}: {error_body[:200]}")
+
+    result = resp.json()
+    text = result["candidates"][0]["content"]["parts"][0]["text"]
+    log.info(f"Gemini 응답 내용: {text}")
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         raise ValueError("영수증 정보를 읽지 못했어요")
